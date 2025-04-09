@@ -197,6 +197,90 @@ MATCH p=((e:Endpoint)-[:HAS_PARAMETER]->(param:Parameter))
 WHERE param.name =~ '(?i).*token.*|.*key.*|.*auth.*|.*session.*' RETURN p LIMIT 30
 ```
 
+#### Multi-Host Relationship Queries
+
+These queries focus exclusively on relationships between different hosts, showing only endpoints and parameters that are shared across multiple domains:
+
+```cypher
+# Find only parameters that exist on multiple hosts (shared parameters)
+MATCH (p:Parameter)<-[:HAS_PARAMETER]-(e:Endpoint)
+WITH p, count(DISTINCT e.host) AS hostCount
+WHERE hostCount > 1
+MATCH (e:Endpoint)-[:HAS_PARAMETER]->(p)
+RETURN p.name AS parameter, collect(DISTINCT e.host) AS hosts, hostCount
+ORDER BY hostCount DESC
+
+# Find endpoint paths that appear on multiple hosts with the same method
+MATCH (e:Endpoint)
+WITH e.path AS path, e.method AS method, count(DISTINCT e.host) AS hostCount
+WHERE hostCount > 1
+MATCH (e:Endpoint)
+WHERE e.path = path AND e.method = method
+RETURN path, method, collect(DISTINCT e.host) AS hosts, hostCount
+ORDER BY hostCount DESC
+
+# Find hosts with the most shared endpoints with other hosts
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint), (h2:Host)-[:HAS_ENDPOINT]->(e2:Endpoint)
+WHERE h1 <> h2 AND e1.path = e2.path AND e1.method = e2.method
+WITH h1.name AS host, count(DISTINCT e1.path) AS sharedEndpoints, count(DISTINCT h2.name) AS connectedHosts
+RETURN host, sharedEndpoints, connectedHosts
+ORDER BY sharedEndpoints DESC
+
+# Identify clusters of hosts based on shared parameters (hosts that share the most parameters)
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(:Endpoint)-[:HAS_PARAMETER]->(p:Parameter)<-[:HAS_PARAMETER]-(:Endpoint)<-[:HAS_ENDPOINT]-(h2:Host)
+WHERE h1 <> h2
+WITH h1.name AS host1, h2.name AS host2, count(DISTINCT p) AS sharedParams
+WHERE sharedParams > 2
+RETURN host1, host2, sharedParams
+ORDER BY sharedParams DESC
+
+# Find parameter patterns used across multiple hosts (only shared parameters)
+MATCH (p:Parameter)<-[:HAS_PARAMETER]-(e:Endpoint)
+WITH p.name AS paramName, count(DISTINCT e.host) AS hostCount
+WHERE hostCount > 1
+MATCH (e:Endpoint)-[:HAS_PARAMETER]->(p:Parameter)
+WHERE p.name = paramName
+RETURN paramName, collect(DISTINCT e.host) AS hosts, hostCount
+ORDER BY hostCount DESC
+```
+
+#### Multi-Host Graph Visualization Queries
+
+These queries will produce graph visualizations showing only shared components:
+
+```cypher
+# Show only endpoints that exist on multiple hosts
+MATCH (e:Endpoint)
+WITH e.path AS path, e.method AS method, count(DISTINCT e.host) AS hostCount
+WHERE hostCount > 1
+MATCH p=(h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)
+WHERE e.path = path AND e.method = method
+RETURN p LIMIT 50
+
+# Show only parameters that exist on multiple hosts
+MATCH (p:Parameter)<-[:HAS_PARAMETER]-(e:Endpoint)
+WITH p, count(DISTINCT e.host) AS hostCount
+WHERE hostCount > 1
+MATCH path=(h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)-[:HAS_PARAMETER]->(p)
+RETURN path LIMIT 50
+
+# Show the interconnections between hosts via shared endpoints and parameters
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint), (h2:Host)-[:HAS_ENDPOINT]->(e2:Endpoint)
+WHERE h1 <> h2 AND e1.path = e2.path
+WITH h1, h2
+MATCH p = shortestPath((h1)-[*..4]-(h2))
+RETURN p LIMIT 30
+
+# Show host clusters based on shared API endpoints
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint), (h2:Host)-[:HAS_ENDPOINT]->(e2:Endpoint)
+WHERE h1 <> h2 AND e1.path = e2.path AND e1.path CONTAINS '/api/' AND e2.path CONTAINS '/api/'
+WITH h1, h2
+MATCH p = (h1)-[:HAS_ENDPOINT]->(e1:Endpoint), q = (h2)-[:HAS_ENDPOINT]->(e2:Endpoint)
+WHERE e1.path = e2.path AND e1.path CONTAINS '/api/'
+RETURN p, q LIMIT 40
+```
+
+
 ## Use Cases
 
 This extension is particularly useful for:
