@@ -335,6 +335,39 @@ RETURN path
 LIMIT 30
 ```
 
+# Show all endpoint-based host cluster connections (any shared endpoints)
+MATCH (e:Endpoint)
+WITH e.path AS path, e.method AS method, collect(DISTINCT e) AS endpoints, count(DISTINCT e.host) AS hostCount
+WHERE hostCount > 1
+UNWIND endpoints AS endpoint
+MATCH (h:Host)-[:HAS_ENDPOINT]->(endpoint)
+RETURN h, endpoint
+LIMIT 100
+
+# Complete host connection map through shared endpoints
+MATCH (e:Endpoint)
+WITH e.path AS path, e.method AS method, count(DISTINCT e.host) AS hostCount
+WHERE hostCount > 1
+MATCH (h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)
+WHERE e.path = path AND e.method = method
+WITH path, method, collect(DISTINCT h) AS connectedHosts, collect(DISTINCT e) AS sharedEndpoints
+UNWIND connectedHosts AS host
+UNWIND sharedEndpoints AS endpoint
+MATCH (host)-[r:HAS_ENDPOINT]->(endpoint)
+RETURN host, r, endpoint
+LIMIT 150
+
+# Show only shared endpoints with their connected host clusters
+MATCH (e:Endpoint)
+WITH e.path AS path, count(DISTINCT e.host) AS hostCount
+WHERE hostCount > 1
+MATCH (h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)
+WHERE e.path = path
+WITH e, h
+RETURN e, collect(DISTINCT h) AS connectedHosts
+LIMIT 50
+```
+
 ## Use Cases
 
 This extension is particularly useful for:
