@@ -280,6 +280,60 @@ WHERE e1.path = e2.path AND e1.path CONTAINS '/api/'
 RETURN p, q LIMIT 40
 ```
 
+#### Host Cluster Connection Queries
+
+These queries specifically focus on showing only the connecting points between different host clusters, filtering out any nodes that don't bridge between hosts:
+
+```cypher
+# Show only the bridging parameters that connect different host clusters
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint)-[:HAS_PARAMETER]->(p:Parameter)<-[:HAS_PARAMETER]-(e2:Endpoint)<-[:HAS_ENDPOINT]-(h2:Host)
+WHERE h1 <> h2
+WITH p, collect(DISTINCT h1) AS hosts1, collect(DISTINCT h2) AS hosts2
+WHERE size(hosts1) > 0 AND size(hosts2) > 0
+MATCH (h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)-[:HAS_PARAMETER]->(p)
+RETURN p, collect(DISTINCT h) AS connected_hosts
+LIMIT 50
+
+# Show only the shared endpoints that form bridges between host clusters
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint), (h2:Host)-[:HAS_ENDPOINT]->(e2:Endpoint)
+WHERE h1 <> h2 AND e1.path = e2.path AND e1.method = e2.method
+WITH e1.path AS path, e1.method AS method
+MATCH (h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)
+WHERE e.path = path AND e.method = method
+RETURN e, collect(DISTINCT h) AS connected_hosts
+LIMIT 50
+
+# Create a host connection graph showing only the bridging nodes
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint)-[:HAS_PARAMETER]->(p:Parameter)<-[:HAS_PARAMETER]-(e2:Endpoint)<-[:HAS_ENDPOINT]-(h2:Host)
+WHERE h1 <> h2
+WITH DISTINCT h1, h2
+MATCH (h1)-[r1:HAS_ENDPOINT]->(e1:Endpoint), (h2)-[r2:HAS_ENDPOINT]->(e2:Endpoint)
+WHERE e1.path = e2.path
+RETURN h1, h2, e1, e2, r1, r2
+LIMIT 40
+
+# Show host clusters connected by unique security parameters (only the connecting parameters)
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint)-[:HAS_PARAMETER]->(p:Parameter)<-[:HAS_PARAMETER]-(e2:Endpoint)<-[:HAS_ENDPOINT]-(h2:Host)
+WHERE h1 <> h2 AND p.name =~ '(?i).*auth.*|.*token.*|.*key.*|.*session.*'
+WITH p, collect(DISTINCT h1) + collect(DISTINCT h2) AS connected_hosts
+MATCH path = (h:Host)-[:HAS_ENDPOINT]->(:Endpoint)-[:HAS_PARAMETER]->(p)
+WHERE h IN connected_hosts
+RETURN path
+LIMIT 30
+
+# Visualize host connections based on identical API endpoints
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint), (h2:Host)-[:HAS_ENDPOINT]->(e2:Endpoint)
+WHERE h1 <> h2 AND e1.path = e2.path AND e1.path CONTAINS '/api/'
+WITH DISTINCT e1.path AS apiPath
+MATCH (h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)
+WHERE e.path = apiPath
+WITH e, collect(DISTINCT h) AS hosts
+WHERE size(hosts) > 1
+MATCH path = (h:Host)-[:HAS_ENDPOINT]->(e)
+WHERE h IN hosts
+RETURN path
+LIMIT 30
+```
 
 ## Use Cases
 
