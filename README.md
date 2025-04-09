@@ -333,7 +333,7 @@ MATCH path = (h:Host)-[:HAS_ENDPOINT]->(e)
 WHERE h IN hosts
 RETURN path
 LIMIT 30
-```
+
 
 # Show all endpoint-based host cluster connections (any shared endpoints)
 MATCH (e:Endpoint)
