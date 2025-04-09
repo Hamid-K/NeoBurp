@@ -112,6 +112,13 @@ cd burp-neo4j-analyzer
 ```
 
 The JAR file will be in the `build/libs/` directory.
+##  Screenshots
+
+![image](https://github.com/user-attachments/assets/adb54b44-5cb0-45ea-bce9-77802a8c9745)
+
+![image](https://github.com/user-attachments/assets/212afb08-188d-4cf9-949c-1d6de0af8413)
+
+
 
 ## License
 
