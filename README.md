@@ -1,5 +1,3 @@
-# Burp Suite Neo4j Graph Analyzer
-
 This extension allows you to analyze Burp Suite proxy traffic using Neo4j graph database. It captures all hosts, endpoints, and parameters from your web traffic and helps identify relationships between them.
 
 ## Features
@@ -72,20 +70,131 @@ You can run custom Cypher queries directly in Neo4j Browser:
 3. Click "Open Neo4j Browser"
 4. Run your custom queries
 
-### Useful Queries
+### Example Queries
+
+#### Basic Queries
 
 ```cypher
-// Find all hosts
+# List all hosts
+MATCH (h:Host) RETURN h.name AS host
+
+# List all endpoints
+MATCH (h:Host)-[:HAS_ENDPOINT]->(e:Endpoint) 
+RETURN h.name AS host, e.path AS path, e.method AS method LIMIT 100
+
+# List all parameters with values
+MATCH (e:Endpoint)-[:HAS_PARAMETER]->(p:Parameter) 
+RETURN e.host AS host, e.path AS path, p.name AS param, p.values AS values LIMIT 100
+
+# Find API endpoints
+MATCH (e:Endpoint) WHERE e.path CONTAINS '/api/' 
+RETURN e.host AS host, e.path AS path, e.method AS method
+
+# Find all POST endpoints
+MATCH (h:Host)-[:HAS_ENDPOINT]->(e:Endpoint) WHERE e.method = 'POST' 
+RETURN h.name AS host, e.path AS path
+
+# Find authentication/authorization parameters
+MATCH (e:Endpoint)-[:HAS_PARAMETER]->(p:Parameter) 
+WHERE p.name CONTAINS 'token' OR p.name CONTAINS 'key' OR p.name CONTAINS 'auth' 
+RETURN e.host AS host, e.path AS path, p.name AS parameter, p.values AS values
+```
+
+#### Cross-Host Analysis
+
+```cypher
+# Find identical paths across different hosts
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint), (h2:Host)-[:HAS_ENDPOINT]->(e2:Endpoint) 
+WHERE h1 <> h2 AND e1.path = e2.path 
+RETURN h1.name AS host1, e1.path AS path1, h2.name AS host2, e2.path AS path2
+
+# Find endpoints sharing parameter names across hosts
+MATCH (e1:Endpoint)-[:HAS_PARAMETER]->(p:Parameter)<-[:HAS_PARAMETER]-(e2:Endpoint) 
+WHERE e1.host <> e2.host 
+RETURN e1.host AS host1, e1.path AS path1, e2.host AS host2, e2.path AS path2, p.name AS parameter
+
+# Find session parameters shared across hosts
+MATCH (e1:Endpoint)-[:HAS_PARAMETER]->(p1:Parameter), (e2:Endpoint)-[:HAS_PARAMETER]->(p2:Parameter) 
+WHERE e1.host <> e2.host AND p1.name = p2.name AND p1.name CONTAINS 'session' 
+RETURN e1.host AS host1, e1.path AS path1, p1.name AS param1, e2.host AS host2, e2.path AS path2, p2.name AS param2
+
+# Find JWT parameters shared across hosts
+MATCH (e1:Endpoint)-[:HAS_PARAMETER]->(p1:Parameter), (e2:Endpoint)-[:HAS_PARAMETER]->(p2:Parameter) 
+WHERE e1.host <> e2.host AND p1.name = p2.name AND p1.name CONTAINS 'jwt' 
+RETURN e1.host AS host1, e1.path AS path1, p1.name AS param1, e2.host AS host2, e2.path AS path2, p2.name AS param2
+
+# Find matching API paths across hosts
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint), (h2:Host)-[:HAS_ENDPOINT]->(e2:Endpoint) 
+WHERE h1 <> h2 AND e1.path CONTAINS '/api/' AND e2.path CONTAINS '/api/' AND split(e1.path, '/')[2] = split(e2.path, '/')[2] 
+RETURN h1.name AS host1, e1.path AS path1, h2.name AS host2, e2.path AS path2, split(e1.path, '/')[2] AS apiVersion
+```
+
+#### Security Analysis
+
+```cypher
+# Find authentication parameters across hosts
+MATCH (e1:Endpoint)-[:HAS_PARAMETER]->(p1:Parameter), (e2:Endpoint)-[:HAS_PARAMETER]->(p2:Parameter) 
+WHERE e1.host <> e2.host AND p1.name = p2.name AND p1.name =~ '(?i).*auth.*|.*token.*|.*api[-_]?key.*|.*secret.*|.*password.*' 
+RETURN e1.host AS host1, e1.path AS path1, p1.name AS param1, e2.host AS host2, e2.path AS path2, p2.name AS param2
+
+# Find file inclusion parameters (potential LFI)
+MATCH (e:Endpoint)-[:HAS_PARAMETER]->(p:Parameter) 
+WHERE p.name =~ '(?i).*file.*|.*path.*|.*dir.*|.*include.*|.*require.*' 
+RETURN e.host AS host, e.path AS path, e.method AS method, p.name AS param
+
+# Find URL redirect parameters (potential open redirect)
+MATCH (e:Endpoint)-[:HAS_PARAMETER]->(p:Parameter) 
+WHERE p.name =~ '(?i).*redir.*|.*url.*|.*link.*|.*goto.*|.*next.*|.*target.*' 
+RETURN e.host AS host, e.path AS path, e.method AS method, p.name AS param, p.values AS values
+
+# Find search/query parameters (potential SQLi)
+MATCH (e:Endpoint)-[:HAS_PARAMETER]->(p:Parameter) 
+WHERE p.name =~ '(?i).*q.*|.*query.*|.*search.*|.*find.*' 
+RETURN e.host AS host, e.path AS path, e.method AS method, p.name AS param
+```
+
+#### Host Relationship Analysis
+
+```cypher
+# Top host pairs by shared parameters
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint)-[:HAS_PARAMETER]->(p:Parameter)<-[:HAS_PARAMETER]-(e2:Endpoint)<-[:HAS_ENDPOINT]-(h2:Host) 
+WHERE h1 <> h2 
+WITH h1, h2, count(p) AS sharedParams 
+RETURN h1.name AS host1, h2.name AS host2, sharedParams ORDER BY sharedParams DESC LIMIT 10
+
+# Host statistics (endpoints and parameters)
+MATCH (h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)-[:HAS_PARAMETER]->(p:Parameter) 
+WITH h, count(DISTINCT e) AS endpoints, count(DISTINCT p) AS params 
+RETURN h.name AS host, endpoints, params ORDER BY endpoints DESC
+
+# All connected host pairs (any relationship)
+MATCH (h1:Host)-[:HAS_ENDPOINT]->(e1:Endpoint), (h2:Host)-[:HAS_ENDPOINT]->(e2:Endpoint) 
+WHERE h1 <> h2 AND (e1.path = e2.path OR EXISTS((e1)-[:HAS_PARAMETER]->()<-[:HAS_PARAMETER]-(e2))) 
+WITH DISTINCT h1, h2 
+RETURN h1.name AS host1, h2.name AS host2
+```
+
+#### Graph Visualization Queries
+
+For these queries, Neo4j Browser will display an interactive graph visualization:
+
+```cypher
+# Show all hosts as graph
 MATCH (h:Host) RETURN h
 
-// Find all endpoints for a specific host
-MATCH (h:Host {name: 'example.com'})-[:HAS_ENDPOINT]->(e:Endpoint)
-RETURN e.path, e.method
+# Show hosts and their endpoints
+MATCH p=(h:Host)-[:HAS_ENDPOINT]->(e:Endpoint) RETURN p LIMIT 50
 
-// Find common parameters across hosts
-MATCH (e1:Endpoint)-[:HAS_PARAMETER]->(p:Parameter)<-[:HAS_PARAMETER]-(e2:Endpoint)
-WHERE e1.host <> e2.host
-RETURN e1.host, e1.path, e2.host, e2.path, p.name
+# Show host-endpoint-parameter chain
+MATCH p=(h:Host)-[:HAS_ENDPOINT]->(e:Endpoint)-[:HAS_PARAMETER]->(param:Parameter) RETURN p LIMIT 50
+
+# Show hosts connected by shared parameters
+MATCH p=((h1:Host)-[:HAS_ENDPOINT]->()-[:HAS_PARAMETER]->()<-[:HAS_PARAMETER]-()<-[:HAS_ENDPOINT]-(h2:Host)) 
+WHERE h1 <> h2 RETURN p LIMIT 20
+
+# Show security-related parameters
+MATCH p=((e:Endpoint)-[:HAS_PARAMETER]->(param:Parameter)) 
+WHERE param.name =~ '(?i).*token.*|.*key.*|.*auth.*|.*session.*' RETURN p LIMIT 30
 ```
 
 ## Use Cases
