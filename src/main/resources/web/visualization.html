@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Neo4j Graph Visualization</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        #toolbar {
+            height: 40px;
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+        }
+        #visualization {
+            flex-grow: 1;
+            background-color: #fdfdfd;
+        }
+        button {
+            margin-right: 10px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            border-radius: 3px;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 1000;
+            display: none;
+        }
+    </style>
+    <!-- Load vis-network from a CDN -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+    <div id="container">
+        <div id="toolbar">
+            <button id="fit-btn">Fit Network</button>
+            <button id="hosts-btn">Show All Hosts</button>
+            <button id="similar-endpoints-btn">Find Similar Endpoints</button>
+            <button id="similar-params-btn">Find Similar Parameters</button>
+            <button id="similar-api-btn">Find Similar APIs</button>
+        </div>
+        <div id="visualization"></div>
+    </div>
+    
+    <div class="legend">
+        <h3 style="margin-top: 0;">Legend</h3>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #6BAED6;"></div>
+            <div>Host</div>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #74C476;"></div>
+            <div>Endpoint</div>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #FD8D3C;"></div>
+            <div>Parameter</div>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script type="text/javascript">
+        // Global variables
+        let network = null;
+        let nodes = new vis.DataSet([]);
+        let edges = new vis.DataSet([]);
+        let graphData = {
+            hosts: [],
+            endpoints: [],
+            parameters: [],
+            connections: []
+        };
+
+        // Visualization options
+        const options = {
+            nodes: {
+                shape: 'dot',
+                size: 16,
+                font: {
+                    size: 14,
+                    color: '#333',
+                    face: 'Arial',
+                    strokeWidth: 3,
+                    strokeColor: '#ffffff'
+                },
+                borderWidth: 2,
+                shadow: true
+            },
+            edges: {
+                width: 2,
+                color: {
+                    color: '#848484',
+                    highlight: '#FF0000',
+                    hover: '#848484'
+                },
+                smooth: {
+                    type: 'continuous',
+                    forceDirection: 'none'
+                }
+            },
+            physics: {
+                barnesHut: {
+                    gravitationalConstant: -10000,
+                    centralGravity: 0.5,
+                    springLength: 150,
+                    springConstant: 0.05,
+                    damping: 0.09
+                },
+                maxVelocity: 50,
+                minVelocity: 0.1,
+                solver: 'barnesHut',
+                stabilization: {
+                    enabled: true,
+                    iterations: 1000,
+                    updateInterval: 100
+                },
+                timestep: 0.5
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 300,
+                hideEdgesOnDrag: true,
+                navigationButtons: true,
+                keyboard: true,
+                multiselect: true
+            },
+            groups: {
+                host: {
+                    color: {
+                        background: '#6BAED6',
+                        border: '#3182BD',
+                        highlight: {
+                            background: '#3182BD',
+                            border: '#08519C'
+                        }
+                    }
+                },
+                endpoint: {
+                    color: {
+                        background: '#74C476',
+                        border: '#41AB5D',
+                        highlight: {
+                            background: '#41AB5D',
+                            border: '#238B45'
+                        }
+                    }
+                },
+                parameter: {
+                    color: {
+                        background: '#FD8D3C',
+                        border: '#E6550D',
+                        highlight: {
+                            background: '#E6550D',
+                            border: '#A63603'
+                        }
+                    }
+                }
+            }
+        };
+
+        // Initialize the visualization
+        function initVisualization() {
+            const container = document.getElementById('visualization');
+            network = new vis.Network(container, { nodes, edges }, options);
+            
+            // Network events
+            network.on('click', function(params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    const node = nodes.get(nodeId);
+                    console.log('Selected Node:', node);
+                    
+                    // You can expand the node, show details, etc.
+                    if (node.type === 'host') {
+                        expandHost(node.id, node.label);
+                    }
+                }
+            });
+
+            network.on("hoverNode", function(params) {
+                const nodeId = params.node;
+                const node = nodes.get(nodeId);
+                const tooltip = document.getElementById('tooltip');
+                tooltip.innerHTML = getNodeTooltip(node);
+                tooltip.style.display = 'block';
+                tooltip.style.left = params.event.clientX + 5 + 'px';
+                tooltip.style.top = params.event.clientY + 5 + 'px';
+            });
+
+            network.on("blurNode", function(params) {
+                document.getElementById('tooltip').style.display = 'none';
+            });
+
+            // Button events
+            document.getElementById('fit-btn').addEventListener('click', function() {
+                network.fit();
+            });
+
+            document.getElementById('hosts-btn').addEventListener('click', function() {
+                window.javaConnector.loadAllHosts();
+            });
+
+            document.getElementById('similar-endpoints-btn').addEventListener('click', function() {
+                window.javaConnector.findSimilarEndpoints();
+            });
+
+            document.getElementById('similar-params-btn').addEventListener('click', function() {
+                window.javaConnector.findSimilarParameters();
+            });
+
+            document.getElementById('similar-api-btn').addEventListener('click', function() {
+                window.javaConnector.findSimilarAPIs();
+            });
+        }
+
+        // Generate tooltip content
+        function getNodeTooltip(node) {
+            let content = `<strong>${node.label}</strong><br>Type: ${node.type}`;
+            
+            if (node.type === 'host') {
+                content += `<br>Endpoints: ${node.endpointCount || 0}`;
+            } else if (node.type === 'endpoint') {
+                content += `<br>Method: ${node.method || ''}`;
+                content += `<br>Parameters: ${node.parameterCount || 0}`;
+            } else if (node.type === 'parameter') {
+                if (node.values && node.values.length > 0) {
+                    content += `<br>Values: ${node.values.join(', ')}`;
+                }
+            }
+            
+            return content;
+        }
+
+        // Load hosts from Neo4j
+        function loadHosts(hostsData) {
+            // Clear existing data
+            nodes.clear();
+            edges.clear();
+            
+            // Process host data
+            const hostNodes = hostsData.map(host => ({
+                id: `host_${host.name}`,
+                label: host.name,
+                type: 'host',
+                group: 'host',
+                endpointCount: host.endpointCount || 0
+            }));
+            
+            // Add nodes to the visualization
+            nodes.add(hostNodes);
+            
+            // Update layout
+            network.fit();
+        }
+
+        // Expand a host to show its endpoints
+        function expandHost(hostId, hostName) {
+            window.javaConnector.loadEndpointsForHost(hostName);
+        }
+
+        // Load endpoints for a host
+        function loadEndpoints(hostName, endpointsData) {
+            const hostId = `host_${hostName}`;
+            
+            // Add endpoint nodes
+            const endpointNodes = endpointsData.map(endpoint => ({
+                id: `endpoint_${hostName}_${endpoint.path}_${endpoint.method}`,
+                label: endpoint.path,
+                type: 'endpoint',
+                group: 'endpoint',
+                method: endpoint.method,
+                parameterCount: endpoint.parameterCount || 0
+            }));
+            
+            // Add edges from host to endpoints
+            const endpointEdges = endpointsData.map(endpoint => ({
+                from: hostId,
+                to: `endpoint_${hostName}_${endpoint.path}_${endpoint.method}`,
+                title: 'has_endpoint'
+            }));
+            
+            // Add to visualization
+            nodes.add(endpointNodes);
+            edges.add(endpointEdges);
+            
+            // Update physics
+            network.setOptions({ physics: { enabled: true } });
+            setTimeout(() => {
+                network.setOptions({ physics: { enabled: false } });
+            }, 3000);
+        }
+
+        // Load parameters for an endpoint
+        function loadParameters(hostName, path, parametersData) {
+            const endpointId = `endpoint_${hostName}_${path}_${parametersData[0].method}`;
+            
+            // Add parameter nodes
+            const parameterNodes = parametersData.map(param => ({
+                id: `param_${param.name}_${hostName}_${path}`,
+                label: param.name,
+                type: 'parameter',
+                group: 'parameter',
+                values: param.values || []
+            }));
+            
+            // Add edges from endpoint to parameters
+            const parameterEdges = parametersData.map(param => ({
+                from: endpointId,
+                to: `param_${param.name}_${hostName}_${path}`,
+                title: 'has_parameter'
+            }));
+            
+            // Add to visualization
+            nodes.add(parameterNodes);
+            edges.add(parameterEdges);
+        }
+
+        // Show relationships between entities
+        function showRelationships(relationshipsData) {
+            // Add relationship edges
+            const relationshipEdges = relationshipsData.map((rel, index) => ({
+                id: `rel_${index}`,
+                from: rel.from,
+                to: rel.to,
+                label: rel.type,
+                dashes: true,
+                width: 2,
+                color: {
+                    color: '#FF5733',
+                    highlight: '#C70039',
+                    hover: '#C70039'
+                },
+                arrows: {
+                    to: {
+                        enabled: true,
+                        scaleFactor: 0.5
+                    }
+                }
+            }));
+            
+            // Add to visualization
+            edges.add(relationshipEdges);
+            
+            // Highlight the related nodes
+            const involvedNodeIds = new Set();
+            relationshipsData.forEach(rel => {
+                involvedNodeIds.add(rel.from);
+                involvedNodeIds.add(rel.to);
+            });
+            
+            network.selectNodes(Array.from(involvedNodeIds));
+            
+            // Update physics
+            network.setOptions({ physics: { enabled: true } });
+            setTimeout(() => {
+                network.setOptions({ physics: { enabled: false } });
+            }, 3000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            initVisualization();
+            
+            // Set up Java connector interface
+            window.javaConnector = {
+                loadAllHosts: function() {
+                    // This will be overridden by Java
+                    console.log("Java connector not initialized - loadAllHosts");
+                },
+                loadEndpointsForHost: function(hostName) {
+                    // This will be overridden by Java
+                    console.log("Java connector not initialized - loadEndpointsForHost");
+                },
+                loadParametersForEndpoint: function(hostName, path) {
+                    // This will be overridden by Java
+                    console.log("Java connector not initialized - loadParametersForEndpoint");
+                },
+                findSimilarEndpoints: function() {
+                    // This will be overridden by Java
+                    console.log("Java connector not initialized - findSimilarEndpoints");
+                },
+                findSimilarParameters: function() {
+                    // This will be overridden by Java
+                    console.log("Java connector not initialized - findSimilarParameters");
+                },
+                findSimilarAPIs: function() {
+                    // This will be overridden by Java
+                    console.log("Java connector not initialized - findSimilarAPIs");
+                }
+            };
+        });
+
+        // JavaScript functions called from Java
+        function updateHostsData(jsonData) {
+            const data = JSON.parse(jsonData);
+            loadHosts(data);
+        }
+
+        function updateEndpointsData(hostName, jsonData) {
+            const data = JSON.parse(jsonData);
+            loadEndpoints(hostName, data);
+        }
+
+        function updateParametersData(hostName, path, jsonData) {
+            const data = JSON.parse(jsonData);
+            loadParameters(hostName, path, data);
+        }
+
+        function updateRelationshipsData(jsonData) {
+            const data = JSON.parse(jsonData);
+            showRelationships(data);
+        }
+    </script>
+</body>
+</html> 

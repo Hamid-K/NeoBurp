@@ -1,0 +1,20 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="extension-template-project.main:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/extension_template_project_main_jar</output-path>
+    <root id="archive" name="extension-template-project.main.jar">
+      <element id="module-output" name="extension-template-project.main" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/montoya-api-2025.3.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/neo4j-java-driver-5.25.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/reactive-streams-1.0.4.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/netty-handler-4.1.113.Final.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/netty-common-4.1.113.Final.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/netty-resolver-4.1.113.Final.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/netty-buffer-4.1.113.Final.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/netty-transport-4.1.113.Final.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/netty-transport-native-unix-common-4.1.113.Final.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/netty-codec-4.1.113.Final.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/netty-tcnative-classes-2.0.66.Final.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/reactor-core-3.6.10.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>
